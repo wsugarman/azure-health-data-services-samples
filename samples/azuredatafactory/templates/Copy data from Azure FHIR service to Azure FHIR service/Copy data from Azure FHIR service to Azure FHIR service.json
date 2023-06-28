@@ -12,7 +12,7 @@
     },
     "resources": [
         {
-            "name": "[concat(parameters('factoryName'), '/Copy from source Azure FHIR service to destination Azure FHIR service')]",
+            "name": "[concat(parameters('factoryName'), '/Copy data from Azure FHIR service to Azure FHIR service')]",
             "type": "Microsoft.DataFactory/factories/pipelines",
             "apiVersion": "2018-06-01",
             "properties": {
