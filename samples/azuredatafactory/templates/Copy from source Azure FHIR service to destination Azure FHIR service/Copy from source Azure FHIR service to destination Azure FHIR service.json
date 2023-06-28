@@ -12,13 +12,15 @@
     },
     "resources": [
         {
-            "name": "[concat(parameters('factoryName'), '/Copy from Azure FHIR service to Azure Data Lake')]",
+            "name": "[concat(parameters('factoryName'), '/Copy from source Azure FHIR service to destination Azure FHIR service')]",
             "type": "Microsoft.DataFactory/factories/pipelines",
             "apiVersion": "2018-06-01",
             "properties": {
+                "description": "Copies FHIR resources of specified resource type, from source Azure FHIR service to destination Azure FHIR service.\nThis supports data copy from:\n* Azure API for FHIR (Gen1) to Azure API for FHIR (Gen1)\n* Azure API for FHIR (Gen1) to Azure FHIR Service (Gen2)\n* Azure FHIR Service (Gen2) to Azure FHIR Service (Gen2)",
                 "activities": [
                     {
                         "name": "Copy FHIR resources",
+                        "description": "Copies FHIR resources of specified resource type, from source Azure FHIR service to destination Azure FHIR service.\nThis supports data copy from:\n* Azure API for FHIR (Gen1) to Azure API for FHIR (Gen1)\n* Azure API for FHIR (Gen1) to Azure FHIR Service (Gen2)\n* Azure FHIR Service (Gen2) to Azure FHIR Service (Gen2)",
                         "type": "Until",
                         "dependsOn": [],
                         "userProperties": [],
@@ -29,7 +31,8 @@
                             },
                             "activities": [
                                 {
-                                    "name": "Save to Azure Data Lake",
+                                    "name": "Format FHIR bundle",
+                                    "description": "Formats the FHIR resources read from source into a FHIR bundle suitable for saving into the destination FHIR Service.",
                                     "type": "ExecutePipeline",
                                     "dependsOn": [
                                         {
@@ -42,20 +45,12 @@
                                     "userProperties": [],
                                     "typeProperties": {
                                         "pipeline": {
-                                            "referenceName": "Write to Azure Data Lake - Batch",
+                                            "referenceName": "Format FHIR bundle",
                                             "type": "PipelineReference"
                                         },
                                         "waitOnCompletion": true,
                                         "parameters": {
-                                            "storageAccount": {
-                                                "value": "@pipeline().parameters.targetDataLake",
-                                                "type": "Expression"
-                                            },
-                                            "storageFolder": {
-                                                "value": "@concat(pipeline().parameters.targetDataLakeFolder, '/', pipeline().parameters.fhirResourceType)",
-                                                "type": "Expression"
-                                            },
-                                            "inputData": {
+                                            "inputResources": {
                                                 "value": "@activity('Read from Azure FHIR Service').output.pipelineReturnValue.resources",
                                                 "type": "Expression"
                                             }
@@ -63,11 +58,43 @@
                                     }
                                 },
                                 {
+                                    "name": "Write to Azure FHIR service",
+                                    "description": "Writes provided FHIR resource into the specified Azure FHIR Service (Gen2) or Azure API for FHIR (Gen1).",
+                                    "type": "ExecutePipeline",
+                                    "dependsOn": [
+                                        {
+                                            "activity": "Format FHIR bundle",
+                                            "dependencyConditions": [
+                                                "Succeeded"
+                                            ]
+                                        }
+                                    ],
+                                    "userProperties": [],
+                                    "typeProperties": {
+                                        "pipeline": {
+                                            "referenceName": "Write to Azure FHIR Service",
+                                            "type": "PipelineReference"
+                                        },
+                                        "waitOnCompletion": true,
+                                        "parameters": {
+                                            "fhirService": {
+                                                "value": "@pipeline().parameters.targetFhirService",
+                                                "type": "Expression"
+                                            },
+                                            "fhirResource": {
+                                                "value": "@json(activity('Format FHIR bundle').output.pipelineReturnValue.fhirBundle)",
+                                                "type": "Expression"
+                                            }
+                                        }
+                                    }
+                                },
+                                {
                                     "name": "Set next link",
+                                    "description": "Sets the next continuation link to query/read remaining FHIR resources.",
                                     "type": "SetVariable",
                                     "dependsOn": [
                                         {
-                                            "activity": "Read from Azure FHIR Service",
+                                            "activity": "Format FHIR bundle",
                                             "dependencyConditions": [
                                                 "Succeeded"
                                             ]
@@ -90,6 +117,7 @@
                                 },
                                 {
                                     "name": "Read from Azure FHIR Service",
+                                    "description": "Reads FHIR resources of the specified FHIR resource type from the specified Azure FHIR Service (Gen2) or Azure API for FHIR (Gen1).",
                                     "type": "ExecutePipeline",
                                     "dependsOn": [],
                                     "userProperties": [],
@@ -131,10 +159,7 @@
                     "fhirResourceType": {
                         "type": "string"
                     },
-                    "targetDataLake": {
-                        "type": "string"
-                    },
-                    "targetDataLakeFolder": {
+                    "targetFhirService": {
                         "type": "string"
                     }
                 },
@@ -147,38 +172,59 @@
                     }
                 },
                 "folder": {
-                    "name": "Pipelines/Copy"
+                    "name": "Pipelines"
                 },
                 "annotations": []
             },
             "dependsOn": [
-                "[concat(variables('factoryId'), '/pipelines/Write to Azure Data Lake - Batch')]",
+                "[concat(variables('factoryId'), '/pipelines/Format FHIR bundle')]",
+                "[concat(variables('factoryId'), '/pipelines/Write to Azure FHIR Service')]",
                 "[concat(variables('factoryId'), '/pipelines/Read from Azure FHIR Service')]"
             ]
         },
         {
-            "name": "[concat(parameters('factoryName'), '/Write to Azure Data Lake - Batch')]",
+            "name": "[concat(parameters('factoryName'), '/Format FHIR bundle')]",
             "type": "Microsoft.DataFactory/factories/pipelines",
             "apiVersion": "2018-06-01",
             "properties": {
+                "description": "Formats the FHIR resources into a FHIR bundle suitable for saving into the destination FHIR Service.",
                 "activities": [
                     {
-                        "name": "Save each file",
+                        "name": "Format FHIR resource",
                         "type": "ForEach",
                         "dependsOn": [],
                         "userProperties": [],
                         "typeProperties": {
                             "items": {
-                                "value": "@pipeline().parameters.inputData",
+                                "value": "@pipeline().parameters.inputResources",
                                 "type": "Expression"
                             },
                             "activities": [
                                 {
-                                    "name": "Save to Data Lake",
-                                    "type": "WebActivity",
+                                    "name": "Append FHIR resources",
+                                    "type": "AppendVariable",
+                                    "dependsOn": [
+                                        {
+                                            "activity": "Update FHIR resource",
+                                            "dependencyConditions": [
+                                                "Succeeded"
+                                            ]
+                                        }
+                                    ],
+                                    "userProperties": [],
+                                    "typeProperties": {
+                                        "variableName": "resources",
+                                        "value": {
+                                            "value": "@json(variables('updatedFhirResource'))",
+                                            "type": "Expression"
+                                        }
+                                    }
+                                },
+                                {
+                                    "name": "Update FHIR resource",
+                                    "type": "SetVariable",
                                     "dependsOn": [],
                                     "policy": {
-                                        "timeout": "0.12:00:00",
                                         "retry": 0,
                                         "retryIntervalInSeconds": 30,
                                         "secureOutput": false,
@@ -186,26 +232,46 @@
                                     },
                                     "userProperties": [],
                                     "typeProperties": {
-                                        "url": {
-                                            "value": "@concat(pipeline().parameters.storageAccount,'/',pipeline().parameters.storageFolder,'/',item().resource.id)",
+                                        "variableName": "updatedFhirResource",
+                                        "value": {
+                                            "value": "{\n    \"fullUrl\":\"@{item().resource.resourceType}/@{item().resource.id}\",\n    \"resource\": @{item().resource},\n    \"request\": {\n        \"method\": \"POST\",\n        \"url\": \"@{item().resource.resourceType}\"\n    }\n}",
                                             "type": "Expression"
-                                        },
-                                        "method": "PUT",
-                                        "headers": {
-                                            "x-ms-blob-type": "BlockBlob",
-                                            "x-ms-version": "2017-11-09"
-                                        },
-                                        "body": {
-                                            "value": "@item().resource",
-                                            "type": "Expression"
-                                        },
-                                        "authentication": {
-                                            "type": "MSI",
-                                            "resource": "https://storage.azure.com/"
                                         }
                                     }
                                 }
                             ]
+                        }
+                    },
+                    {
+                        "name": "Set FHIR bundle output",
+                        "type": "SetVariable",
+                        "dependsOn": [
+                            {
+                                "activity": "Format FHIR resource",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "policy": {
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "variableName": "pipelineReturnValue",
+                            "value": [
+                                {
+                                    "key": "fhirBundle",
+                                    "value": {
+                                        "type": "Expression",
+                                        "content": "@concat('{\n    \"resourceType\": \"Bundle\",    \n    \"id\": \"id\",\n    \"meta\": {\n        \"profile\": [\n             \"http://hl7.org/fhir/4.0.1/StructureDefinition/Bundle\"\n        ]\n    },\n    \"type\": \"batch\",    \n    \"entry\":', string(variables('resources')), '\n}')"
+                                    }
+                                }
+                            ],
+                            "setSystemVariable": true
                         }
                     }
                 ],
@@ -214,21 +280,82 @@
                     "cancelAfter": {}
                 },
                 "parameters": {
-                    "storageAccount": {
-                        "type": "string"
-                    },
-                    "storageFolder": {
-                        "type": "string"
-                    },
-                    "inputData": {
+                    "inputResources": {
                         "type": "array"
+                    }
+                },
+                "variables": {
+                    "resources": {
+                        "type": "Array"
+                    },
+                    "updatedFhirResource": {
+                        "type": "String"
+                    }
+                },
+                "folder": {
+                    "name": "Transform/Format"
+                },
+                "annotations": []
+            },
+            "dependsOn": []
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/Write to Azure FHIR Service')]",
+            "type": "Microsoft.DataFactory/factories/pipelines",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "description": "Writes provided FHIR resource into the specified Azure FHIR Service (Gen2) or Azure API for FHIR (Gen1).",
+                "activities": [
+                    {
+                        "name": "Save FHIR resource",
+                        "type": "WebActivity",
+                        "dependsOn": [],
+                        "policy": {
+                            "timeout": "0.12:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "url": {
+                                "value": "@pipeline().parameters.fhirService",
+                                "type": "Expression"
+                            },
+                            "method": "POST",
+                            "headers": {},
+                            "body": {
+                                "value": "@pipeline().parameters.fhirResource",
+                                "type": "Expression"
+                            },
+                            "authentication": {
+                                "type": "MSI",
+                                "resource": {
+                                    "value": "@pipeline().parameters.fhirService",
+                                    "type": "Expression"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "policy": {
+                    "elapsedTimeMetric": {},
+                    "cancelAfter": {}
+                },
+                "parameters": {
+                    "fhirService": {
+                        "type": "string"
+                    },
+                    "fhirResource": {
+                        "type": "string"
                     }
                 },
                 "folder": {
                     "name": "Load"
                 },
                 "annotations": [],
-                "lastPublishTime": "2023-03-22T20:40:53Z"
+                "lastPublishTime": "2023-03-23T16:50:24Z"
             },
             "dependsOn": []
         },
@@ -237,6 +364,7 @@
             "type": "Microsoft.DataFactory/factories/pipelines",
             "apiVersion": "2018-06-01",
             "properties": {
+                "description": "Reads FHIR resources of the specified FHIR resource type from the specified Azure FHIR Service (Gen2) or Azure API for FHIR (Gen1).",
                 "activities": [
                     {
                         "name": "Get FHIR Resources",
