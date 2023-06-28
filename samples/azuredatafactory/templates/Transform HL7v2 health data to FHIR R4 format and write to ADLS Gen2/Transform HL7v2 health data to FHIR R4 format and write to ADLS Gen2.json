@@ -12,19 +12,21 @@
     },
     "resources": [
         {
-            "name": "[concat(parameters('factoryName'), '/HL7V2-FHIR_R4 Conversion and Persist')]",
+            "name": "[concat(parameters('factoryName'), '/Transform HL7v2 health data to FHIR R4 format and write to ADLS Gen2')]",
             "type": "Microsoft.DataFactory/factories/pipelines",
             "apiVersion": "2018-06-01",
             "properties": {
+                "description": "Transforms HL7v2 messages read from an Azure Data Lake Storage (ADLS) Gen2 or Azure Blob Storage account, to FHIR R4 format, and persists transformed FHIR bundle result into ADLS Gen2 or Blob Storage account.\nBy default if no ACR template configuration is provided (for custom conversion templates), the Microsoft published conversion liquid templates will be used.",
                 "activities": [
                     {
                         "name": "Read input data",
+                        "description": "Reads input data from specified ADLS Gen2 or Blob Storage account, containing unstructured health text to be analyzed and transformed into FHIR R4.",
                         "type": "ExecutePipeline",
                         "dependsOn": [],
                         "userProperties": [],
                         "typeProperties": {
                             "pipeline": {
-                                "referenceName": "Read from Azure Blob Storage",
+                                "referenceName": "Read from ADLS Gen2 or Blob Storage",
                                 "type": "PipelineReference"
                             },
                             "waitOnCompletion": true,
@@ -45,7 +47,8 @@
                         }
                     },
                     {
-                        "name": "HL7V2-FHIR_R4 Converter",
+                        "name": "HL7v2 to FHIR R4 Converter",
+                        "description": "Performs the conversion of HL7v2 data to FHIR R4 bundles. ",
                         "type": "ExecutePipeline",
                         "dependsOn": [
                             {
@@ -58,7 +61,7 @@
                         "userProperties": [],
                         "typeProperties": {
                             "pipeline": {
-                                "referenceName": "HL7V2-FHIR_R4 Converter",
+                                "referenceName": "HL7v2 to FHIR R4 Converter",
                                 "type": "PipelineReference"
                             },
                             "waitOnCompletion": true,
@@ -87,11 +90,12 @@
                         }
                     },
                     {
-                        "name": "Write converted result to Azure Storage",
+                        "name": "Write converted result to ADLS Gen2",
+                        "description": "Writes the converted result (i.e., FHIR bundle resource) to the specified ADLS Gen2 or Blob Storage account.",
                         "type": "ExecutePipeline",
                         "dependsOn": [
                             {
-                                "activity": "HL7V2-FHIR_R4 Converter",
+                                "activity": "HL7v2 to FHIR R4 Converter",
                                 "dependencyConditions": [
                                     "Succeeded"
                                 ]
@@ -100,7 +104,7 @@
                         "userProperties": [],
                         "typeProperties": {
                             "pipeline": {
-                                "referenceName": "Write to Azure Blob Storage",
+                                "referenceName": "Write to ADLS Gen2 or Blob Storage",
                                 "type": "PipelineReference"
                             },
                             "waitOnCompletion": true,
@@ -118,56 +122,19 @@
                                     "type": "Expression"
                                 },
                                 "fileContent": {
-                                    "value": "@activity('HL7V2-FHIR_R4 Converter').output.pipelineReturnValue.convertResult",
+                                    "value": "@activity('HL7v2 to FHIR R4 Converter').output.pipelineReturnValue.convertResult",
                                     "type": "Expression"
                                 }
                             }
                         }
                     },
                     {
-                        "name": "Write converted result to Azure Data Lake",
+                        "name": "Write errors to ADLS Gen2",
+                        "description": "Writes the errors encountered during conversion to the specified ADLS Gen2 or Blob Storage account.",
                         "type": "ExecutePipeline",
                         "dependsOn": [
                             {
-                                "activity": "HL7V2-FHIR_R4 Converter",
-                                "dependencyConditions": [
-                                    "Succeeded"
-                                ]
-                            }
-                        ],
-                        "userProperties": [],
-                        "typeProperties": {
-                            "pipeline": {
-                                "referenceName": "Write to Azure Data Lake",
-                                "type": "PipelineReference"
-                            },
-                            "waitOnCompletion": true,
-                            "parameters": {
-                                "storageAccount": {
-                                    "value": "@pipeline().parameters.outputDataLakeAccount",
-                                    "type": "Expression"
-                                },
-                                "storageFolder": {
-                                    "value": "@pipeline().parameters.outputStorageFolder",
-                                    "type": "Expression"
-                                },
-                                "storageFile": {
-                                    "value": "@{pipeline().parameters.inputStorageFile}_@{utcnow()}.json",
-                                    "type": "Expression"
-                                },
-                                "fileContent": {
-                                    "value": "@activity('HL7V2-FHIR_R4 Converter').output.pipelineReturnValue.convertResult",
-                                    "type": "Expression"
-                                }
-                            }
-                        }
-                    },
-                    {
-                        "name": "Write errors to Azure Data Lake",
-                        "type": "ExecutePipeline",
-                        "dependsOn": [
-                            {
-                                "activity": "HL7V2-FHIR_R4 Converter",
+                                "activity": "HL7v2 to FHIR R4 Converter",
                                 "dependencyConditions": [
                                     "Failed"
                                 ]
@@ -176,13 +143,13 @@
                         "userProperties": [],
                         "typeProperties": {
                             "pipeline": {
-                                "referenceName": "Write to Azure Data Lake",
+                                "referenceName": "Write to ADLS Gen2 or Blob Storage",
                                 "type": "PipelineReference"
                             },
                             "waitOnCompletion": true,
                             "parameters": {
                                 "storageAccount": {
-                                    "value": "@pipeline().parameters.outputDataLakeAccount",
+                                    "value": "@pipeline().parameters.outputStorageAccount",
                                     "type": "Expression"
                                 },
                                 "storageFolder": {
@@ -194,7 +161,7 @@
                                     "type": "Expression"
                                 },
                                 "fileContent": {
-                                    "value": "@activity('HL7V2-FHIR_R4 Converter').output.pipelineReturnValue.convertError",
+                                    "value": "@activity('HL7v2 to FHIR R4 Converter').output.pipelineReturnValue.convertError",
                                     "type": "Expression"
                                 }
                             }
@@ -226,9 +193,6 @@
                     "inputStorageFile": {
                         "type": "string"
                     },
-                    "outputDataLakeAccount": {
-                        "type": "string"
-                    },
                     "outputStorageAccount": {
                         "type": "string"
                     },
@@ -243,23 +207,23 @@
                     }
                 },
                 "folder": {
-                    "name": "Pipelines/ETL"
+                    "name": "Pipelines"
                 },
                 "annotations": [],
                 "lastPublishTime": "2023-03-23T21:51:27Z"
             },
             "dependsOn": [
-                "[concat(variables('factoryId'), '/pipelines/Read from Azure Blob Storage')]",
-                "[concat(variables('factoryId'), '/pipelines/HL7V2-FHIR_R4 Converter')]",
-                "[concat(variables('factoryId'), '/pipelines/Write to Azure Blob Storage')]",
-                "[concat(variables('factoryId'), '/pipelines/Write to Azure Data Lake')]"
+                "[concat(variables('factoryId'), '/pipelines/Read from ADLS Gen2 or Blob Storage')]",
+                "[concat(variables('factoryId'), '/pipelines/HL7v2 to FHIR R4 Converter')]",
+                "[concat(variables('factoryId'), '/pipelines/Write to ADLS Gen2 or Blob Storage')]"
             ]
         },
         {
-            "name": "[concat(parameters('factoryName'), '/Read from Azure Blob Storage')]",
+            "name": "[concat(parameters('factoryName'), '/Read from ADLS Gen2 or Blob Storage')]",
             "type": "Microsoft.DataFactory/factories/pipelines",
             "apiVersion": "2018-06-01",
             "properties": {
+                "description": "Reads blob file contents from specified Azure Data Lake Storage Gen2 account or Azure Blob Storage account.",
                 "activities": [
                     {
                         "name": "Get Blob",
@@ -346,19 +310,21 @@
             "dependsOn": []
         },
         {
-            "name": "[concat(parameters('factoryName'), '/HL7V2-FHIR_R4 Converter')]",
+            "name": "[concat(parameters('factoryName'), '/HL7v2 to FHIR R4 Converter')]",
             "type": "Microsoft.DataFactory/factories/pipelines",
             "apiVersion": "2018-06-01",
             "properties": {
+                "description": "Performs the conversion of HL7v2 data to FHIR R4 bundles. ",
                 "activities": [
                     {
-                        "name": "HL7V2-FHIR_R4",
+                        "name": "HL7v2 to FHIR R4 Converter",
+                        "description": "Performs the conversion of HL7v2 data to FHIR R4 bundles. ",
                         "type": "ExecutePipeline",
                         "dependsOn": [],
                         "userProperties": [],
                         "typeProperties": {
                             "pipeline": {
-                                "referenceName": "Generic Converter",
+                                "referenceName": "Generic FHIR R4 Converter",
                                 "type": "PipelineReference"
                             },
                             "waitOnCompletion": true,
@@ -392,7 +358,7 @@
                         "type": "SetVariable",
                         "dependsOn": [
                             {
-                                "activity": "HL7V2-FHIR_R4",
+                                "activity": "HL7v2 to FHIR R4 Converter",
                                 "dependencyConditions": [
                                     "Succeeded"
                                 ]
@@ -412,7 +378,7 @@
                                     "key": "convertResult",
                                     "value": {
                                         "type": "Expression",
-                                        "content": "@activity('HL7V2-FHIR_R4').output.pipelineReturnValue.convertResult"
+                                        "content": "@activity('HL7v2 to FHIR R4 Converter').output.pipelineReturnValue.convertResult"
                                     }
                                 }
                             ],
@@ -424,7 +390,7 @@
                         "type": "SetVariable",
                         "dependsOn": [
                             {
-                                "activity": "HL7V2-FHIR_R4",
+                                "activity": "HL7v2 to FHIR R4 Converter",
                                 "dependencyConditions": [
                                     "Failed"
                                 ]
@@ -444,7 +410,7 @@
                                     "key": "convertError",
                                     "value": {
                                         "type": "Expression",
-                                        "content": "@activity('HL7V2-FHIR_R4').output.pipelineReturnValue.convertError"
+                                        "content": "@activity('HL7v2 to FHIR R4 Converter').output.pipelineReturnValue.convertError"
                                     }
                                 }
                             ],
@@ -482,79 +448,15 @@
                 "lastPublishTime": "2023-03-23T21:51:27Z"
             },
             "dependsOn": [
-                "[concat(variables('factoryId'), '/pipelines/Generic Converter')]"
+                "[concat(variables('factoryId'), '/pipelines/Generic FHIR R4 Converter')]"
             ]
         },
         {
-            "name": "[concat(parameters('factoryName'), '/Write to Azure Blob Storage')]",
+            "name": "[concat(parameters('factoryName'), '/Write to ADLS Gen2 or Blob Storage')]",
             "type": "Microsoft.DataFactory/factories/pipelines",
             "apiVersion": "2018-06-01",
             "properties": {
-                "activities": [
-                    {
-                        "name": "Save Blob",
-                        "type": "WebActivity",
-                        "dependsOn": [],
-                        "policy": {
-                            "timeout": "0.12:00:00",
-                            "retry": 0,
-                            "retryIntervalInSeconds": 30,
-                            "secureOutput": false,
-                            "secureInput": false
-                        },
-                        "userProperties": [],
-                        "typeProperties": {
-                            "url": {
-                                "value": "@concat(pipeline().parameters.storageAccount,'/',pipeline().parameters.storageFolder,'/',pipeline().parameters.storageFile)",
-                                "type": "Expression"
-                            },
-                            "method": "PUT",
-                            "headers": {
-                                "x-ms-blob-type": "BlockBlob",
-                                "x-ms-version": "2017-11-09"
-                            },
-                            "body": {
-                                "value": "@pipeline().parameters.fileContent",
-                                "type": "Expression"
-                            },
-                            "authentication": {
-                                "type": "MSI",
-                                "resource": "https://storage.azure.com/"
-                            }
-                        }
-                    }
-                ],
-                "policy": {
-                    "elapsedTimeMetric": {},
-                    "cancelAfter": {}
-                },
-                "parameters": {
-                    "storageAccount": {
-                        "type": "string"
-                    },
-                    "storageFolder": {
-                        "type": "string"
-                    },
-                    "storageFile": {
-                        "type": "string"
-                    },
-                    "fileContent": {
-                        "type": "string"
-                    }
-                },
-                "folder": {
-                    "name": "Load"
-                },
-                "annotations": [],
-                "lastPublishTime": "2023-03-22T20:40:53Z"
-            },
-            "dependsOn": []
-        },
-        {
-            "name": "[concat(parameters('factoryName'), '/Write to Azure Data Lake')]",
-            "type": "Microsoft.DataFactory/factories/pipelines",
-            "apiVersion": "2018-06-01",
-            "properties": {
+                "description": "Writes to files in the specified Azure Data Lake Storage Gen2 account or Azure Blob Storage account.",
                 "activities": [
                     {
                         "name": "Save file",
@@ -616,10 +518,11 @@
             "dependsOn": []
         },
         {
-            "name": "[concat(parameters('factoryName'), '/Generic Converter')]",
+            "name": "[concat(parameters('factoryName'), '/Generic FHIR R4 Converter')]",
             "type": "Microsoft.DataFactory/factories/pipelines",
             "apiVersion": "2018-06-01",
             "properties": {
+                "description": "Performs the conversion of specified input data type to FHIR R4 bundles. ",
                 "activities": [
                     {
                         "name": "Convert",
